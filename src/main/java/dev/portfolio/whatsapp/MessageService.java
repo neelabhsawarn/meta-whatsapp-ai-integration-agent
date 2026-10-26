@@ -16,6 +16,7 @@ public class MessageService {
 
     @FunctionalInterface public interface Sleeper { void sleep(long millis) throws InterruptedException; }
 
+    @org.springframework.beans.factory.annotation.Autowired
     public MessageService(MessageStore store, MetaGateway meta, DiagnosticStore diagnostics,
                           @Value("${integration.max-rate-retries:2}") int maxRetries,
                           @Value("${integration.max-retry-delay-ms:3000}") long maxDelayMs) {
