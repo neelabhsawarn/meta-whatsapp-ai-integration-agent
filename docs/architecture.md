@@ -1,57 +1,30 @@
-# Architecture, reliability choices and threat model
+# Architecture and design trade-offs
 
-## Components
+## Layers
 
-- **FastAPI:** receives HTTP requests, applies input validation and authentication.
-- **MetaClient:** generates the correct Graph API URL, uses a Meta bearer token, classifies responses and retries *only selected* cases.
-- **Ledger (SQLite):** enforces unique outbound idempotency keys and unique, pseudonymised webhook event IDs; retains curated error metadata.
-- **Incident agent:** uses OpenAI Responses API function calls with a fixed allowlist of read-only tools.
+- `ApiController` accepts authenticated integration requests and diagnostic questions.
+- `MessageService` implements the state machine; `MessageStore` is a replaceable persistence interface.
+- `HttpMetaGateway` isolates Meta REST transport and parses only status, Retry-After and message id.
+- `WebhookController` challenges Meta and validates raw-byte signatures before parsing.
+- `DiagnosticStore` stores fixed diagnostic categories and status codes only.
+- `DiagnosticAgent` calls the official OpenAI Java SDK with **read-only** tool definitions.
 
-## Why this form of authentication?
+## Outbound idempotency
 
-Meta's `Authorization: Bearer` identifies our developer app to Meta. The local `X-API-Key` is a separate credential protecting our outbound test endpoint from unauthorised callers. Meta's webhook `GET` verification uses a deliberately chosen shared verification token; webhook `POST` integrity uses the Meta app secret to compute HMAC over raw bytes. These values are **not interchangeable**.
+Key and payload are hashed with SHA-256 before storage. The table's unique constraint allows only the first concurrent submission with an idempotency key to proceed. A replay with equal payload returns the stored state; a mismatched payload returns 409. This deduplicates *client requests to our service*, not delivery across all systems. The simple synchronous design does not recover from a process crash in `PROCESSING`; production would need leases, explicit reconciliation and a supervised recovery flow.
 
-## Outbound request state machine
+## Rate limits vs uncertainty
 
-```mermaid
-stateDiagram-v2
-    [*] --> in_progress: first idempotency key
-    in_progress --> succeeded: Meta returns message ID
-    in_progress --> retryable: rejected by rate limit/connection fails
-    in_progress --> uncertain: 5xx/read timeout/ambiguous response
-    in_progress --> permanent: request definitely rejected
-    retryable --> in_progress: same key, same payload, manual retry later
-    succeeded --> succeeded: replay yields cached result
-    uncertain --> uncertain: replay blocked until manual reconciliation
-    permanent --> permanent: replay blocked
-```
+For explicit HTTP **429**, the service retries at most twice with a bounded numeric Retry-After and exponential fallback. For a **5xx** or transport exception it marks the send `UNKNOWN`, not replayed. This avoids avoidable double messages when the remote acceptance status is unclear. A production system would use remote delivery-status webhooks + reconciliation and limit concurrent users based on Meta's actual quota.
 
-One idempotency key must always correspond to exactly one recipient+message fingerprint. If a client reuses a key for different content the server returns 409. Keys persist across restarts. A process crash might leave a record in `in_progress`; it is **not** automatically retried because the request may have reached Meta.
+## Webhook authenticity and de-duplication
 
-### Retry categories
+The HMAC uses the Meta application secret and raw request bytes; digest comparison is constant-time. A separate GET verification token establishes webhook ownership. Incoming message IDs and each stage of message status are SHA-256 hashed and inserted under a unique key. This app deliberately never forwards or persists customer message bodies. In production add strict body-size limits, event schema validation, ingress throttling, and durable queue processing.
 
-| Failure | Default choice | Why |
-|---|---|---|
-| HTTP 429, Meta rate limit code | Retry with bounded backoff | Request was explicitly rejected as rate-limited |
-| ConnectError/ConnectTimeout | Retry bounded | No successful HTTP connection established |
-| HTTP 400/401/403 non-rate-limit | No retry | Invalid request or permissions; fix configuration |
-| HTTP 5xx | Mark uncertain and stop | Non-idempotent POST might already have been processed |
-| ReadTimeout, WriteTimeout, dropped connection after request | Mark uncertain and stop | No safe evidence of non-delivery |
+## AI boundary
 
-Backoff is exponential. A larger `Retry-After` than configured max prevents same-call retry instead of violating Meta's requested wait. The caller can retry later with the same key while record status is `retryable`.
+The LLM is optional; if missing an API key the main integration remains usable. The agent can see categories, codes and timestamps—not raw Meta JSON. Function tools use bounded read-only SQL and execute only after local API authentication. The agent cannot make remediation changes. Limit loops to three tool-call turns. This example asks the human operator to confirm actions.
 
-## Webhook trust boundaries
+## Why not Resilience4j here?
 
-1. Read **raw** signed bytes (max 1 MiB).
-2. Verify `X-Hub-Signature-256=sha256=<hex>` using `HMAC_SHA256(app_secret, raw_bytes)` with constant-time comparison.
-3. Decode JSON *only after* signature verification.
-4. Extract event IDs for incoming `messages` and `statuses`; HMAC pseudonymise before writing to the database.
-5. Duplicate event IDs are ignored. No raw message body is saved or passed to AI.
-
-Caveat: the webhook's HMAC is not by itself a timestamp-based anti-replay protocol. An identical signed payload is deduplicated by event ID; altered distinct signed events cannot be forged without the app secret.
-
-## Agent threat model
-
-Potential risk: accidental leak of WhatsApp text or phone numbers into LLM context, prompt-injection text in logs, AI suggesting destructive remediations, or high API costs. Mitigations: only store an allowlist of diagnostic fields, tool functions query only those fields, stable runbook text, no generic shell/SQL/HTTP tools, no write tools, bounded model turns/tool calls, no autonomous repairs, no model access to `.env`, model requests use `store=False` and human reviews any recommendation.
-
-For production: database IAM and encryption, log redaction auditing, retention/purge jobs, queue/worker/outbox, alerting, external API credential rotation, optional OAuth for clients, monitoring, sandbox/prod separation and compliance review.
+The core code intentionally implements a small, explicit retry loop to make exactly which statuses are retried obvious in an interview. A next iteration can add Resilience4j `Retry`, `RateLimiter`, and `CircuitBreaker` policies around the gateway while preserving the crucial rule: **never automatically retry ambiguous sends**. Introducing a generic retry-on-any-exception decorator without that rule would be unsafe.

@@ -1,0 +1,28 @@
+server:
+  port: ${PORT:8080}
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/whatsapp}
+    username: ${DB_USER:whatsapp}
+    password: ${DB_PASSWORD:local_password}
+  flyway:
+    enabled: true
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+integration:
+  api-key: ${LOCAL_API_KEY:}
+  meta-access-token: ${META_ACCESS_TOKEN:}
+  meta-app-secret: ${META_APP_SECRET:}
+  meta-verify-token: ${META_VERIFY_TOKEN:}
+  meta-phone-number-id: ${META_PHONE_NUMBER_ID:}
+  meta-graph-version: ${META_GRAPH_VERSION:v23.0}
+  meta-base-url: ${META_BASE_URL:https://graph.facebook.com}
+  openai-model: ${OPENAI_MODEL:gpt-5-mini}
+  max-rate-retries: 2
+  max-retry-delay-ms: 3000

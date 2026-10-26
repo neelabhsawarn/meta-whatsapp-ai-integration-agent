@@ -1,14 +1,16 @@
-name: Test
+name: Java CI
 on:
   push:
   pull_request:
 jobs:
-  pytest:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-java@v4
         with:
-          python-version: '3.12'
-      - run: python -m pip install -e '.[dev]'
-      - run: python -m pytest -q
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Maven tests (Testcontainers uses Docker on runner)
+        run: mvn -B clean verify

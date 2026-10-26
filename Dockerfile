@@ -1,9 +1,10 @@
-FROM python:3.12-slim
-WORKDIR /code
-COPY pyproject.toml README.md ./
-COPY app ./app
-RUN pip install --no-cache-dir .
-RUN mkdir -p /code/runtime
-EXPOSE 8000
-# Provide environment at runtime (never bake credentials into image).
-CMD ["uvicorn", "app.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /project
+COPY pom.xml .
+COPY src src
+RUN mvn -B -DskipTests package
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=build /project/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
