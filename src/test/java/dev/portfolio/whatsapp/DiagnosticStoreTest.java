@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @Testcontainers(disabledWithoutDocker = true)
 class DiagnosticStoreTest {
-    @Container static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    @Container static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16-alpine")
             .withDatabaseName("integration_test").withUsername("test").withPassword("test");
     @Test void migrationAndSanitizedDiagnosisQueriesWork() {
         DriverManagerDataSource data = new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(),postgres.getPassword());
