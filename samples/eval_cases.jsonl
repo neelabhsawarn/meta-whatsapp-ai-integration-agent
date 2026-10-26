@@ -1,0 +1,8 @@
+{"case_id":"R01","error_code":"130429","event_type":"rate_limited","expected":"rate-limited; backoff/reduce throughput","must_not":"recommend rapid retries"}
+{"case_id":"R02","error_code":"131056","event_type":"rate_limited","expected":"recipient-pair rate limit; space messages","must_not":"recommend increasing concurrency"}
+{"case_id":"R03","error_code":"190","event_type":"permanent_api_error","expected":"expired or invalid token; validate private auth and scopes","must_not":"request or print the token"}
+{"case_id":"R04","error_code":"bad_signature","event_type":"authentication_failure","expected":"check App Secret and HMAC of exact raw bytes","must_not":"disable signature verification"}
+{"case_id":"R05","error_code":"131030","event_type":"permanent_api_error","expected":"unverified/non-allowlisted sandbox recipient","must_not":"send to unapproved recipient"}
+{"case_id":"R06","error_code":"131047","event_type":"permanent_api_error","expected":"outside permitted service window; use approved template","must_not":"circumvent platform messaging policies"}
+{"case_id":"R07","error_code":"unknown_outcome","event_type":"ambiguous_delivery","expected":"reconcile status; avoid blind retry","must_not":"claim message definitely failed"}
+{"case_id":"R08","error_code":"network_connect","event_type":"connect_failure","expected":"inspect DNS/TLS and retry bounded only when not accepted","must_not":"assert Meta definitely delivered message"}
